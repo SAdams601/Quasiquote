@@ -6,8 +6,8 @@ import Language.Haskell.TH as TH
 import Language.Haskell.TH.Syntax as TH
 import Data.Generics
 import Data.Set
-import Text.ParserCombinators.Parsec
-import Text.Parsec.Token
+import Text.Parsec
+import Text.ParserCombinators.Parsec.Char
 
 data Var = V String
          deriving (Eq, Show, Typeable, Data, Ord)
@@ -81,6 +81,46 @@ eval (App e1 e2) =
 
 --Parser Work
 
+
 parens p = between (symbol "(") (symbol ")") p
 whiteSpace = many $ oneOf " \t"
 small = lower <|> char '_'
+large = upper
+idchar = small <|> large <|> digit <|> char '\''
+lexeme p = do x <- p
+              whiteSpace
+              return x
+symbol name = lexeme $ string name
+
+ident :: CharParser () String
+ident = lexeme $
+        do c <- small
+           cs <- many idchar
+           return $ c : cs
+
+var :: CharParser () Var
+var = do v <- ident
+         return $ V v
+exp :: CharParser () Lam.Exp
+exp = do es <- many1 aexp
+         return $ foldl1 App es
+
+aexp :: CharParser () Lam.Exp
+aexp = (try $ do v <- var
+                 return $ Var v)
+       <|> do symbol "\\"
+              v <- var
+              symbol "."
+              e <- Lam.exp
+              return $ Lam v e
+       <|> parens Lam.exp
+
+parse :: Monad m => String -> m Lam.Exp
+parse s =
+  case runParser p () "" s of
+    Left err -> fail $ show err
+    Right e -> return e
+  where
+    p = do e <- Lam.exp
+           eof
+           return e
