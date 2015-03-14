@@ -81,7 +81,7 @@ eval (App e1 e2) =
 
 parseAndEval :: String -> IO ()
 parseAndEval s = do 
-  p <- Lam.parse s
+  p <- Lam.parse ("",0,0) s
   let e = eval p
   hPrint stdout e
 
@@ -89,12 +89,12 @@ parseAndEval s = do
 
 
 parens p = between (symbol "(") (symbol ")") p
-whiteSpace = many $ oneOf " \t"
+--whiteSpace = many $ oneOf " \t"
 small = lower <|> char '_'
 large = upper
 idchar = small <|> large <|> digit <|> char '\''
 lexeme p = do x <- p
-              whiteSpace
+              spaces
               return x
 symbol name = lexeme $ string name
 
@@ -122,19 +122,47 @@ aexp = (try $ do v <- var
               return $ Lam v e
        <|> parens Lam.exp
 
-parse :: Monad m => String -> m Lam.Exp
-parse s =
+parse :: Monad m => (String, Int, Int) -> String -> m Lam.Exp
+parse (file, line, col) s =
   case runParser p () "" s of
     Left err -> fail $ show err
     Right e -> return e
   where
-    p = do e <- Lam.exp
-           eof
-           return e
+    p = do
+      pos <- getPosition
+      setPosition $
+        (flip setSourceName) file $
+        (flip setSourceLine) line $
+        (flip setSourceColumn) col $
+        pos
+      spaces
+      e <- Lam.exp
+      eof
+      return e
 
 -- Quasiquote stuff
-lame :: (String,Int,Int) -> String -> TH.ExpQ
-lame _ s = Lam.parse s >>= dataToExpQ
 
-lamp :: (String,Int,Int) -> String -> TH.PatQ
-lamp _ s = Lam.parse s >>= dataToPatQ
+lame :: String -> TH.ExpQ
+lame s = do
+  loc <- TH.location
+  let pos = (TH.loc_filename loc,
+             fst (TH.loc_start loc),
+             snd (TH.loc_start loc))
+  expr <- Lam.parse pos s
+  dataToExpQ (const Nothing) expr
+
+lamp :: String -> TH.PatQ
+lamp s = do
+  loc <- TH.location
+  let pos = (TH.loc_filename loc,
+             fst (TH.loc_start loc),
+             snd (TH.loc_start loc))
+  expr <- Lam.parse pos s
+  dataToPatQ (const Nothing) expr
+
+lcalc :: QuasiQuoter
+lcalc = QuasiQuoter {quoteExp = lame,
+                     quotePat = lamp,
+                     quoteType = undefined,
+                     quoteDec = undefined                                 
+                    }
