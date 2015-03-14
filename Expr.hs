@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveDataTypeable, QuasiQuotes #-}
 module Expr where
 
 import Data.Generics
@@ -87,7 +87,13 @@ quoteExprExp s =
                fst (TH.loc_start loc),
                snd (TH.loc_start loc))
     expr <- parseExpr pos s
-    dataToExpQ (const Nothing) expr
+    dataToExpQ (const Nothing `extQ` antiExprExp) expr
+
+antiExprExp :: Expr -> Maybe (TH.Q TH.Exp)
+antiExprExp (AntiIntExpr v) = Just $ TH.appE (TH.conE (TH.mkName "IntExpr"))
+                                             (TH.varE (TH.mkName v))
+antiExprExp (AntiExpr v)    = Just $ TH.varE (TH.mkName v)
+antiExprExp _               = Nothing
 
 quoteExprPat :: String -> TH.PatQ
 quoteExprPat s =
@@ -97,7 +103,13 @@ quoteExprPat s =
                fst (TH.loc_start loc),
                snd (TH.loc_start loc))
     expr <- parseExpr pos s
-    dataToPatQ (const Nothing) expr    
+    dataToPatQ (const Nothing `extQ` antiExprPat) expr    
+
+antiExprPat :: Expr -> Maybe (TH.Q TH.Pat)
+antiExprPat (AntiIntExpr v) = Just $ TH.conP (TH.mkName "IntExpr")
+                                             [TH.varP (TH.mkName v)]
+antiExprPat (AntiExpr v)    = Just $ TH.varP (TH.mkName v)
+antiExprPat _               = Nothing
 
 ex :: QuasiQuoter
 ex = QuasiQuoter { quoteExp = quoteExprExp,
