@@ -1,13 +1,14 @@
-{-# LANGUAGE TemplateHaskell, DeriveDataTypeable, ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell, DeriveDataTypeable, ScopedTypeVariables, ExistentialQuantification #-}
 module Lam where
 
 import Language.Haskell.TH.Quote as TH
 import Language.Haskell.TH as TH
 import Language.Haskell.TH.Syntax as TH
 import Data.Generics
-import Data.Set
+import Data.Set hiding (foldl)
 import Text.Parsec
 import Text.ParserCombinators.Parsec.Char
+import System.IO
 
 data Var = V String
          deriving (Eq, Show, Typeable, Data, Ord)
@@ -78,6 +79,11 @@ eval (App e1 e2) =
     Lam v body -> eval (subst body v e2)
     e1'        -> App e1' (eval e2)
 
+parseAndEval :: String -> IO ()
+parseAndEval s = do 
+  p <- Lam.parse s
+  let e = eval p
+  hPrint stdout e
 
 --Parser Work
 
@@ -101,6 +107,7 @@ ident = lexeme $
 var :: CharParser () Var
 var = do v <- ident
          return $ V v
+
 exp :: CharParser () Lam.Exp
 exp = do es <- many1 aexp
          return $ foldl1 App es
@@ -124,3 +131,10 @@ parse s =
     p = do e <- Lam.exp
            eof
            return e
+
+-- Quasiquote stuff
+lame :: (String,Int,Int) -> String -> TH.ExpQ
+lame _ s = Lam.parse s >>= dataToExpQ
+
+lamp :: (String,Int,Int) -> String -> TH.PatQ
+lamp _ s = Lam.parse s >>= dataToPatQ
