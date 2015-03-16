@@ -11,11 +11,13 @@ import Text.ParserCombinators.Parsec.Char
 import System.IO
 
 data Var = V String
+         | AV String
          deriving (Eq, Show, Typeable, Data, Ord)
 
 data Exp = Var Var
          | Lam Var Lam.Exp
          | App Lam.Exp Lam.Exp
+         | AE String
          deriving (Show, Typeable, Data)
 
 -- Evaluator Work
@@ -107,6 +109,10 @@ ident = lexeme $
 var :: CharParser () Var
 var = do v <- ident
          return $ V v
+      <|> do string "$var:"
+             v <- ident
+             return $ AV v
+      
 
 exp :: CharParser () Lam.Exp
 exp = do es <- many1 aexp
@@ -121,6 +127,9 @@ aexp = (try $ do v <- var
               e <- Lam.exp
               return $ Lam v e
        <|> parens Lam.exp
+       <|> do string "$exp:"
+              v <- ident
+              return $ AE v
 
 parse :: Monad m => (String, Int, Int) -> String -> m Lam.Exp
 parse (file, line, col) s =
@@ -142,6 +151,23 @@ parse (file, line, col) s =
 
 -- Quasiquote stuff
 
+antiVarE :: Var -> Maybe TH.ExpQ
+antiVarE (AV v) = Just $ TH.varE $ TH.mkName v
+antiVarE _ = Nothing
+
+antiExpE :: Lam.Exp -> Maybe TH.ExpQ
+antiExpE (AE v) = Just $ TH.varE $ TH.mkName v
+antiExpE _ = Nothing
+
+antiVarP :: Var -> Maybe TH.PatQ
+antiVarP (AV v) = Just $ TH.varP $ TH.mkName v
+antiVarP _ = Nothing
+
+
+antiExpP :: Lam.Exp -> Maybe TH.PatQ
+antiExpP (AE v) = Just $ TH.varP $ TH.mkName v
+antiExpP _ = Nothing
+
 lame :: String -> TH.ExpQ
 lame s = do
   loc <- TH.location
@@ -149,7 +175,9 @@ lame s = do
              fst (TH.loc_start loc),
              snd (TH.loc_start loc))
   expr <- Lam.parse pos s
-  dataToExpQ (const Nothing) expr
+  dataToExpQ (const Nothing `extQ` antiVarE
+                            `extQ` antiExpE) expr
+
 
 lamp :: String -> TH.PatQ
 lamp s = do
@@ -158,7 +186,8 @@ lamp s = do
              fst (TH.loc_start loc),
              snd (TH.loc_start loc))
   expr <- Lam.parse pos s
-  dataToPatQ (const Nothing) expr
+  dataToPatQ (const Nothing `extQ` antiVarP
+                            `extQ` antiExpP) expr
 
 lcalc :: QuasiQuoter
 lcalc = QuasiQuoter {quoteExp = lame,
